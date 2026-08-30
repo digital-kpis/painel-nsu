@@ -1,0 +1,953 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Painel NSu — Liberação de Motorista</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+:root{
+  --bg-base:#0B0F1A;
+  --bg-panel:#141C2E;
+  --bg-panel-2:#1B2438;
+  --border:#28324A;
+  --border-soft:#202A40;
+  --text-1:#EAF0FB;
+  --text-2:#8D9BB8;
+  --text-3:#57628A;
+  --accent:#FF7A45;
+  --accent-dim:rgba(255,122,69,0.14);
+  --good:#34D399;
+  --good-bg:rgba(52,211,153,0.13);
+  --warn:#FBBF24;
+  --warn-bg:rgba(251,191,36,0.13);
+  --bad:#F87171;
+  --bad-bg:rgba(248,113,113,0.14);
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;background:var(--bg-base);color:var(--text-1);font-family:'Inter',sans-serif;}
+body{padding:20px 20px 60px;}
+.mono{font-family:'JetBrains Mono',monospace;}
+.display{font-family:'Barlow Condensed',sans-serif;}
+
+/* ---------- HEADER ---------- */
+.header{
+  display:flex;justify-content:space-between;align-items:flex-start;gap:16px;
+  flex-wrap:wrap;margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid var(--border-soft);
+}
+.header-left .eyebrow{
+  font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:2px;color:var(--accent);
+  text-transform:uppercase;margin-bottom:6px;display:flex;align-items:center;gap:8px;
+}
+.eyebrow .dot{width:7px;height:7px;border-radius:50%;background:var(--good);box-shadow:0 0 8px var(--good);animation:pulse 2s infinite;}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:0.4;}}
+.header-left h1{
+  font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:32px;line-height:1;margin:0 0 6px;
+  letter-spacing:0.3px;
+}
+.header-left .sub{color:var(--text-2);font-size:13px;}
+.header-left .sub b{color:var(--text-1);font-weight:600;}
+
+.upload-wrap{display:flex;flex-direction:column;align-items:flex-end;gap:6px;}
+.upload-btn{
+  background:var(--accent);color:#1A0E08;font-family:'Inter',sans-serif;font-weight:600;font-size:13px;
+  border:none;border-radius:8px;padding:11px 18px;cursor:pointer;display:flex;align-items:center;gap:8px;
+  transition:transform .15s ease, box-shadow .15s ease;box-shadow:0 4px 14px rgba(255,122,69,0.25);
+}
+.upload-btn:hover{transform:translateY(-1px);box-shadow:0 6px 18px rgba(255,122,69,0.35);}
+.upload-btn:active{transform:translateY(0);}
+.upload-hint{font-size:11px;color:var(--text-3);}
+#fileInput{display:none;}
+.upload-status{
+  font-size:11px;color:var(--text-3);max-width:280px;text-align:right;line-height:1.5;
+  font-family:'JetBrains Mono',monospace;
+}
+.upload-status.ok{color:var(--good);}
+.upload-status.err{color:var(--bad);}
+.upload-status.loading{color:var(--accent);}
+.upload-btn.loading{opacity:0.7;pointer-events:none;}
+.upload-btn .spinner{
+  display:inline-block;width:11px;height:11px;border:2px solid rgba(26,14,8,0.35);
+  border-top-color:#1A0E08;border-radius:50%;animation:spin .7s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg);}}
+.toast{
+  position:fixed;top:18px;left:50%;transform:translateX(-50%) translateY(-20px);background:var(--bg-panel-2);
+  border:1px solid var(--accent);color:var(--text-1);padding:10px 18px;border-radius:8px;font-size:13px;
+  opacity:0;pointer-events:none;transition:all .3s ease;z-index:999;box-shadow:0 8px 24px rgba(0,0,0,0.4);
+}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+/* ---------- KPI STRIP ---------- */
+.kpi-strip{
+  display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:20px;
+}
+.kpi-card{
+  background:var(--bg-panel);border:1px solid var(--border-soft);border-radius:10px;padding:14px 14px 12px;
+  position:relative;overflow:hidden;
+}
+.kpi-card .label{font-size:10.5px;color:var(--text-2);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:8px;font-weight:600;}
+.kpi-card .value{font-family:'Barlow Condensed',sans-serif;font-size:30px;font-weight:700;line-height:1;color:var(--text-1);}
+.kpi-card .value .unit{font-size:16px;color:var(--text-2);font-weight:500;margin-left:2px;}
+.kpi-card .delta{font-size:11px;margin-top:6px;font-family:'JetBrains Mono',monospace;}
+.kpi-card.good .value{color:var(--good);}
+.kpi-card.warn .value{color:var(--warn);}
+.kpi-card.bad .value{color:var(--bad);}
+.kpi-card .bar{position:absolute;bottom:0;left:0;height:3px;background:var(--accent);}
+
+/* ---------- PULSE STRIP (signature) ---------- */
+.pulse-section{
+  background:var(--bg-panel);border:1px solid var(--border-soft);border-radius:12px;padding:16px 18px 14px;
+  margin-bottom:20px;
+}
+.pulse-header{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px;flex-wrap:wrap;gap:8px;}
+.pulse-header h2{font-family:'Barlow Condensed',sans-serif;font-size:19px;font-weight:600;margin:0;}
+.pulse-header .legend{display:flex;gap:14px;font-size:11px;color:var(--text-2);align-items:center;}
+.pulse-header .legend span{display:flex;align-items:center;gap:5px;}
+.legend .sw{width:9px;height:9px;border-radius:2px;}
+.pulse-strip{display:flex;gap:4px;align-items:flex-end;height:110px;padding-top:4px;}
+.pulse-col{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;position:relative;cursor:default;}
+.pulse-bar{width:100%;border-radius:4px 4px 0 0;transition:height .4s ease;position:relative;min-height:3px;}
+.pulse-col .hlabel{font-size:9.5px;color:var(--text-3);margin-top:5px;font-family:'JetBrains Mono',monospace;}
+.pulse-col .pctlabel{font-size:9.5px;font-weight:600;margin-bottom:3px;font-family:'JetBrains Mono',monospace;}
+.pulse-col:hover .pulse-bar{filter:brightness(1.25);}
+
+/* ---------- GRID / PANELS ---------- */
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;}
+.grid.thirds{grid-template-columns:1fr 1fr 1fr;}
+.panel{
+  background:var(--bg-panel);border:1px solid var(--border-soft);border-radius:12px;padding:16px 18px;
+}
+.panel h3{font-family:'Barlow Condensed',sans-serif;font-size:18px;font-weight:600;margin:0 0 3px;}
+.panel .desc{font-size:11.5px;color:var(--text-3);margin-bottom:12px;}
+.panel canvas{max-height:260px;}
+
+/* ---------- DIAGNOSTIC PANEL ---------- */
+.diag-panel{background:var(--bg-panel);border:1px solid var(--accent);border-radius:12px;padding:18px 20px;margin-bottom:16px;}
+.diag-panel h3{font-family:'Barlow Condensed',sans-serif;font-size:19px;font-weight:600;margin:0 0 4px;color:var(--accent);
+  display:flex;align-items:center;gap:8px;}
+.diag-panel .desc{font-size:11.5px;color:var(--text-3);margin-bottom:14px;}
+.diag-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px;}
+.diag-list li{
+  display:flex;gap:10px;font-size:13px;line-height:1.5;color:var(--text-1);padding:10px 12px;
+  background:var(--bg-panel-2);border-radius:8px;border-left:3px solid var(--border);
+}
+.diag-list li.crit{border-left-color:var(--bad);}
+.diag-list li.warn{border-left-color:var(--warn);}
+.diag-list li.info{border-left-color:var(--accent);}
+.diag-list li.good{border-left-color:var(--good);}
+.diag-list b{color:var(--text-1);}
+.diag-tag{
+  font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:700;letter-spacing:0.5px;padding:3px 7px;
+  border-radius:4px;height:fit-content;white-space:nowrap;text-transform:uppercase;
+}
+.diag-tag.crit{background:var(--bad-bg);color:var(--bad);}
+.diag-tag.warn{background:var(--warn-bg);color:var(--warn);}
+.diag-tag.info{background:var(--accent-dim);color:var(--accent);}
+.diag-tag.good{background:var(--good-bg);color:var(--good);}
+
+/* ---------- HEATMAP ---------- */
+.heatmap-table{width:100%;border-collapse:collapse;font-size:11px;}
+.heatmap-table th{
+  font-family:'JetBrains Mono',monospace;font-weight:500;color:var(--text-2);font-size:10.5px;padding:4px 2px;
+  text-align:center;
+}
+.heatmap-table td{text-align:center;padding:0;}
+.heatmap-table .hourcell{
+  font-family:'JetBrains Mono',monospace;color:var(--text-2);font-size:10px;text-align:right;padding-right:8px;
+  white-space:nowrap;
+}
+.heatcell{
+  width:100%;aspect-ratio:1.5/1;display:flex;align-items:center;justify-content:center;
+  font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;border-radius:3px;margin:1px;
+  color:#0B0F1A;
+}
+.heatcell.empty{background:var(--bg-panel-2);color:var(--text-3);}
+
+/* ---------- TABLE ---------- */
+.data-table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:4px;}
+.data-table th{
+  text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-2);
+  padding:8px 8px;border-bottom:1px solid var(--border);font-weight:600;
+}
+.data-table td{padding:8px 8px;border-bottom:1px solid var(--border-soft);font-family:'JetBrains Mono',monospace;font-size:12px;}
+.data-table tr:last-child td{border-bottom:none;}
+.badge{padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;font-family:'JetBrains Mono',monospace;}
+.badge.good{background:var(--good-bg);color:var(--good);}
+.badge.warn{background:var(--warn-bg);color:var(--warn);}
+.badge.bad{background:var(--bad-bg);color:var(--bad);}
+
+footer{text-align:center;color:var(--text-3);font-size:11px;margin-top:24px;font-family:'JetBrains Mono',monospace;}
+
+@media (max-width:900px){
+  .kpi-strip{grid-template-columns:repeat(2,1fr);}
+  .grid, .grid.thirds{grid-template-columns:1fr;}
+  .header{flex-direction:column;}
+  .upload-wrap{align-items:flex-start;}
+  .pulse-strip{height:130px;}
+}
+</style>
+</head>
+<body>
+
+<div class="toast" id="toast"></div>
+
+<div class="header">
+  <div class="header-left">
+    <div class="eyebrow"><span class="dot"></span>PAINEL OPERACIONAL · NSu / LIBERAÇÃO DE MOTORISTA</div>
+    <h1 id="lojaTitle">—</h1>
+    <div class="sub">Período: <b id="periodoLabel">—</b> · <span id="totalPedidosLabel">—</span> pedidos analisados</div>
+  </div>
+  <div class="upload-wrap">
+    <button class="upload-btn" id="uploadBtn" onclick="document.getElementById('fileInput').click()">
+      ⬆ Atualizar dados (.xlsx)
+    </button>
+    <input type="file" id="fileInput" accept=".xlsx,.xls">
+    <div class="upload-status" id="uploadStatus">Nenhum arquivo carregado ainda — exibindo dados iniciais</div>
+  </div>
+</div>
+
+<!-- KPI STRIP -->
+<div class="kpi-strip" id="kpiStrip"></div>
+
+<!-- PULSE STRIP -->
+<div class="pulse-section">
+  <div class="pulse-header">
+    <h2>Ritmo do dia — coletas por hora × % fora do SLA de expedição</h2>
+    <div class="legend">
+      <span><span class="sw" style="background:var(--good)"></span> &lt;50%</span>
+      <span><span class="sw" style="background:var(--warn)"></span> 50–65%</span>
+      <span><span class="sw" style="background:var(--bad)"></span> &gt;65%</span>
+    </div>
+  </div>
+  <div class="pulse-strip" id="pulseStrip"></div>
+</div>
+
+<!-- DIAGNÓSTICO -->
+<div class="diag-panel">
+  <h3>◆ Diagnóstico automático</h3>
+  <div class="desc">Gerado a partir dos dados carregados — thresholds: bom &lt;50%, atenção 50–65%, crítico &gt;65% fora do SLA</div>
+  <ul class="diag-list" id="diagList"></ul>
+</div>
+
+<!-- HORA + HEATMAP -->
+<div class="grid">
+  <div class="panel">
+    <h3>Volume × SLA de expedição por hora</h3>
+    <div class="desc">Barras = pedidos coletados · Linha = % fora do SLA</div>
+    <canvas id="chartHourly"></canvas>
+  </div>
+  <div class="panel">
+    <h3>Mapa de calor — hora × dia da semana</h3>
+    <div class="desc">% fora do SLA de expedição por célula</div>
+    <div id="heatmapContainer"></div>
+  </div>
+</div>
+
+<!-- PICO POR DIA / TABELA -->
+<div class="grid">
+  <div class="panel">
+    <h3>Pico (11h–12h) por dia da semana</h3>
+    <div class="desc">Concentração de volume no horário mais crítico</div>
+    <canvas id="chartPeakDow"></canvas>
+  </div>
+  <div class="panel">
+    <h3>Detalhamento do pico por dia</h3>
+    <div class="desc">Pedidos coletados entre 11h e 12h59</div>
+    <table class="data-table">
+      <thead><tr><th>Dia</th><th>Pedidos</th><th>Fora SLA</th><th>%</th></tr></thead>
+      <tbody id="peakTableBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- SLA BREAKDOWN -->
+<div class="panel" style="margin-bottom:16px;">
+  <h3>SLA por etapa do processo</h3>
+  <div class="desc">Onde o pedido perde tempo: separação → expedição → entrega</div>
+  <div class="grid thirds" style="margin-top:10px;margin-bottom:0;">
+    <div style="text-align:center;">
+      <canvas id="donutSeparacao" style="max-height:180px;"></canvas>
+      <div class="display" style="font-size:14px;color:var(--text-2);margin-top:6px;">Separação</div>
+    </div>
+    <div style="text-align:center;">
+      <canvas id="donutExpedicao" style="max-height:180px;"></canvas>
+      <div class="display" style="font-size:14px;color:var(--text-2);margin-top:6px;">Expedição</div>
+    </div>
+    <div style="text-align:center;">
+      <canvas id="donutEntrega" style="max-height:180px;"></canvas>
+      <div class="display" style="font-size:14px;color:var(--text-2);margin-top:6px;">Entrega</div>
+    </div>
+  </div>
+</div>
+
+<!-- CANCELAMENTO / RUPTURA -->
+<div class="grid">
+  <div class="panel">
+    <h3>Motivos de cancelamento</h3>
+    <div class="desc">Top motivos declarados pelo cliente/loja</div>
+    <canvas id="chartCancel"></canvas>
+  </div>
+  <div class="panel">
+    <h3>Tipos de ruptura de itens</h3>
+    <div class="desc">Disponibilidade de itens no momento da separação</div>
+    <canvas id="chartRuptura"></canvas>
+  </div>
+</div>
+
+<!-- TENDÊNCIA DIÁRIA -->
+<div class="panel" style="margin-bottom:16px;">
+  <h3>Tendência diária — volume × % fora do SLA</h3>
+  <div class="desc">Evolução ao longo do período analisado</div>
+  <canvas id="chartDaily" style="max-height:280px;"></canvas>
+</div>
+
+<footer>PAINEL NSu · Atualizado automaticamente ao enviar novo arquivo .xlsx · Processamento local no navegador</footer>
+
+<script>
+const INITIAL_DATA = {"kpis": {"total_pedidos": 13520, "concluded": 12616, "cancelled": 666, "pct_concluded": 93.3, "pct_cancelled": 4.9, "pct_fora_sla_separacao": 1.9, "pct_fora_sla_expedicao": 52.6, "pct_fora_sla_entrega": 17.9, "pct_ruptura": 46.3, "nota_media": 8.88, "valor_total": 3402019.55, "periodo_inicio": "2026-08-01", "periodo_fim": "2026-08-28", "loja": "ASSAI ATACADISTA - Assaí - Maracanã"}, "sla_breakdown": {"separacao": {"dentro": 12967, "fora": 259}, "expedicao": {"dentro": 3808, "fora": 7108}, "entrega": {"dentro": 10051, "fora": 2415}}, "hourly": [{"hora": 8, "pedidos": 581, "fora_sla": 290, "pct_fora": 49.9}, {"hora": 9, "pedidos": 775, "fora_sla": 389, "pct_fora": 50.2}, {"hora": 10, "pedidos": 1029, "fora_sla": 514, "pct_fora": 50.0}, {"hora": 11, "pedidos": 1580, "fora_sla": 1273, "pct_fora": 80.6}, {"hora": 12, "pedidos": 1548, "fora_sla": 1177, "pct_fora": 76.0}, {"hora": 13, "pedidos": 1209, "fora_sla": 702, "pct_fora": 58.1}, {"hora": 14, "pedidos": 1129, "fora_sla": 643, "pct_fora": 57.0}, {"hora": 15, "pedidos": 1068, "fora_sla": 453, "pct_fora": 42.4}, {"hora": 16, "pedidos": 953, "fora_sla": 431, "pct_fora": 45.2}, {"hora": 17, "pedidos": 973, "fora_sla": 507, "pct_fora": 52.1}, {"hora": 18, "pedidos": 920, "fora_sla": 459, "pct_fora": 49.9}, {"hora": 19, "pedidos": 565, "fora_sla": 241, "pct_fora": 42.7}, {"hora": 20, "pedidos": 187, "fora_sla": 11, "pct_fora": 5.9}], "heatmap": {"hours": [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20], "days": ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"], "values": [[52.2, 30.4, 60.6, 29.4, 54.1, 65.3, null], [39.7, 57.0, 72.7, 77.7, 49.0, 17.0, 0.0], [53.6, 51.1, 58.6, 64.3, 36.1, 24.3, 47.6], [69.8, 80.8, 85.4, 86.1, 84.8, 88.7, 69.8], [63.5, 79.8, 83.1, 91.5, 83.9, 54.4, 60.5], [57.2, 49.7, 69.9, 61.3, 52.0, 50.3, 65.8], [42.4, 48.8, 66.7, 65.0, 67.4, 42.5, 65.2], [34.8, 45.1, 41.8, 50.0, 40.0, 35.1, 55.7], [51.4, 40.7, 21.5, 42.9, 43.8, 70.2, 25.3], [40.6, 61.9, 40.5, 35.8, 66.2, 67.7, 50.0], [49.4, 54.4, 56.5, 51.5, 48.0, 43.4, 6.7], [36.2, 25.0, 53.1, 65.1, 54.1, 26.8, 0.0], [3.7, 0.0, 3.8, 8.0, 0.0, 13.2, null]]}, "daily_trend": [{"data": "2026-08-01", "pedidos": 529, "pct_fora": 41.8}, {"data": "2026-08-02", "pedidos": 392, "pct_fora": 52.6}, {"data": "2026-08-03", "pedidos": 635, "pct_fora": 62.5}, {"data": "2026-08-04", "pedidos": 562, "pct_fora": 61.9}, {"data": "2026-08-05", "pedidos": 539, "pct_fora": 74.8}, {"data": "2026-08-06", "pedidos": 530, "pct_fora": 63.0}, {"data": "2026-08-07", "pedidos": 593, "pct_fora": 60.0}, {"data": "2026-08-08", "pedidos": 517, "pct_fora": 56.3}, {"data": "2026-08-09", "pedidos": 343, "pct_fora": 53.6}, {"data": "2026-08-10", "pedidos": 556, "pct_fora": 52.7}, {"data": "2026-08-11", "pedidos": 560, "pct_fora": 70.5}, {"data": "2026-08-12", "pedidos": 541, "pct_fora": 58.2}, {"data": "2026-08-13", "pedidos": 550, "pct_fora": 59.5}, {"data": "2026-08-14", "pedidos": 464, "pct_fora": 44.6}, {"data": "2026-08-15", "pedidos": 602, "pct_fora": 52.8}, {"data": "2026-08-16", "pedidos": 421, "pct_fora": 40.4}, {"data": "2026-08-17", "pedidos": 466, "pct_fora": 35.4}, {"data": "2026-08-18", "pedidos": 463, "pct_fora": 51.5}, {"data": "2026-08-19", "pedidos": 464, "pct_fora": 42.7}, {"data": "2026-08-20", "pedidos": 435, "pct_fora": 46.0}, {"data": "2026-08-21", "pedidos": 488, "pct_fora": 51.4}, {"data": "2026-08-22", "pedidos": 497, "pct_fora": 39.6}, {"data": "2026-08-23", "pedidos": 359, "pct_fora": 68.8}, {"data": "2026-08-24", "pedidos": 482, "pct_fora": 46.5}, {"data": "2026-08-25", "pedidos": 458, "pct_fora": 33.6}, {"data": "2026-08-26", "pedidos": 463, "pct_fora": 53.8}, {"data": "2026-08-27", "pedidos": 589, "pct_fora": 37.4}, {"data": "2026-08-28", "pedidos": 22, "pct_fora": 0.0}], "cancel_reasons": [{"motivo": "O tempo de entrega é muito alto", "count": 111}, {"motivo": "Ninguém poderá receber o pedido", "count": 111}, {"motivo": "O pedido está errado ou incompleto", "count": 86}, {"motivo": "O pedido está atrasado", "count": 77}, {"motivo": "Cliente não localizado", "count": 68}, {"motivo": "Não há entregadores disponíveis", "count": 33}, {"motivo": "Solicitado para o local errado", "count": 30}, {"motivo": "A entrega é em uma área de risco", "count": 22}], "cancel_origin": [{"origem": "CUSTOMER", "count": 463}, {"origem": "LOGISTICS", "count": 159}, {"origem": "MERCHANT", "count": 22}], "ruptura_reasons": [{"tipo": "sem ruptura", "count": 6931}, {"tipo": "item indisponível", "count": 5447}, {"tipo": "sem info", "count": 612}, {"tipo": "item indisponível e quantidade enviada insuficiente", "count": 307}, {"tipo": "quantidade enviada insuficiente", "count": 223}], "peak_by_dow": [{"dow": "Seg", "pedidos": 464, "fora_sla": 310, "pct_fora": 66.8}, {"dow": "Ter", "pedidos": 466, "fora_sla": 374, "pct_fora": 80.3}, {"dow": "Qua", "pedidos": 520, "fora_sla": 438, "pct_fora": 84.2}, {"dow": "Qui", "pedidos": 506, "fora_sla": 452, "pct_fora": 89.3}, {"dow": "Sex", "pedidos": 358, "fora_sla": 302, "pct_fora": 84.4}, {"dow": "Sáb", "pedidos": 407, "fora_sla": 306, "pct_fora": 75.2}, {"dow": "Dom", "pedidos": 407, "fora_sla": 268, "pct_fora": 65.8}], "canal": [{"label": "IFOOD", "count": 13520}], "tipo_entrega": [{"label": "ENTREGA", "count": 12629}, {"label": "RETIRADA", "count": 279}], "modal": [{"label": "LOGISTIC_OPERATOR", "count": 8578}, {"label": "AUTONOMOUS", "count": 3519}]};
+
+const COLORS = {
+  good:'#34D399', warn:'#FBBF24', bad:'#F87171', accent:'#FF7A45',
+  text2:'#8D9BB8', text3:'#57628A', border:'#28324A', panel2:'#1B2438'
+};
+function sevColor(pct){
+  if(pct===null||pct===undefined) return COLORS.text3;
+  if(pct>65) return COLORS.bad;
+  if(pct>=50) return COLORS.warn;
+  return COLORS.good;
+}
+function sevClass(pct){
+  if(pct===null||pct===undefined) return '';
+  if(pct>65) return 'bad';
+  if(pct>=50) return 'warn';
+  return 'good';
+}
+function fmtInt(n){ return n===null||n===undefined? '—' : n.toLocaleString('pt-BR'); }
+function fmtPct(n){ return n===null||n===undefined? '—' : n.toFixed(1).replace('.',',')+'%'; }
+function fmtBRL(n){ return n===null||n===undefined? '—' : n.toLocaleString('pt-BR',{style:'currency',currency:'BRL',maximumFractionDigits:0}); }
+
+let chartInstances = {};
+function destroyCharts(){
+  Object.values(chartInstances).forEach(c=>{ if(c) c.destroy(); });
+  chartInstances = {};
+}
+
+Chart.defaults.font.family = "'Inter', sans-serif";
+Chart.defaults.color = COLORS.text2;
+Chart.defaults.borderColor = COLORS.border;
+
+function render(data){
+  destroyCharts();
+  renderHeader(data);
+  renderKpis(data);
+  renderPulse(data);
+  renderDiagnosis(data);
+  renderHourlyChart(data);
+  renderHeatmap(data);
+  renderPeakChart(data);
+  renderPeakTable(data);
+  renderDonuts(data);
+  renderCancelChart(data);
+  renderRupturaChart(data);
+  renderDailyChart(data);
+}
+
+function renderHeader(data){
+  document.getElementById('lojaTitle').textContent = data.kpis.loja || 'Painel NSu';
+  document.getElementById('periodoLabel').textContent = fmtDateBR(data.kpis.periodo_inicio)+' — '+fmtDateBR(data.kpis.periodo_fim);
+  document.getElementById('totalPedidosLabel').textContent = fmtInt(data.kpis.total_pedidos);
+}
+function fmtDateBR(iso){
+  if(!iso || iso==='N/A') return '—';
+  const [y,m,d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+}
+
+function renderKpis(data){
+  const k = data.kpis;
+  const cards = [
+    {label:'Total de pedidos', value:fmtInt(k.total_pedidos), cls:''},
+    {label:'SLA expedição fora', value:fmtPct(k.pct_fora_sla_expedicao), cls:sevClass(k.pct_fora_sla_expedicao)},
+    {label:'SLA entrega fora', value:fmtPct(k.pct_fora_sla_entrega), cls:sevClass(k.pct_fora_sla_entrega)},
+    {label:'Ruptura de itens', value:fmtPct(k.pct_ruptura), cls: k.pct_ruptura>40?'warn':''},
+    {label:'Cancelamentos', value:fmtPct(k.pct_cancelled), cls: k.pct_cancelled>6?'bad':(k.pct_cancelled>3?'warn':'good')},
+    {label:'Nota média cliente', value: k.nota_media!==null? k.nota_media.toFixed(2).replace('.',','):'—', cls:'good'},
+  ];
+  const strip = document.getElementById('kpiStrip');
+  strip.innerHTML = cards.map(c=>`
+    <div class="kpi-card ${c.cls}">
+      <div class="label">${c.label}</div>
+      <div class="value">${c.value}</div>
+    </div>
+  `).join('');
+}
+
+function renderPulse(data){
+  const hourly = data.hourly;
+  const maxPedidos = Math.max(...hourly.map(h=>h.pedidos), 1);
+  const el = document.getElementById('pulseStrip');
+  el.innerHTML = hourly.map(h=>{
+    const heightPct = Math.max((h.pedidos/maxPedidos)*100, 3);
+    const color = sevColor(h.pct_fora);
+    return `
+      <div class="pulse-col" title="${h.hora}h — ${fmtInt(h.pedidos)} pedidos, ${fmtPct(h.pct_fora)} fora do SLA">
+        <div class="pctlabel" style="color:${color}">${h.pct_fora.toFixed(0)}%</div>
+        <div class="pulse-bar" style="height:${heightPct}%; background:${color};"></div>
+        <div class="hlabel">${h.hora}h</div>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderDiagnosis(data){
+  const insights = generateInsights(data);
+  const list = document.getElementById('diagList');
+  list.innerHTML = insights.map(i=>`
+    <li class="${i.level}">
+      <span class="diag-tag ${i.level}">${i.tag}</span>
+      <span>${i.text}</span>
+    </li>
+  `).join('');
+}
+
+function generateInsights(data){
+  const insights = [];
+  const hourly = data.hourly;
+  const k = data.kpis;
+
+  // Peak hour
+  const validHourly = hourly.filter(h=>h.pedidos>20);
+  if(validHourly.length){
+    const peak = validHourly.reduce((a,b)=> b.pct_fora>a.pct_fora? b:a);
+    const totalPedidosHourly = hourly.reduce((s,h)=>s+h.pedidos,0);
+    const pctVolPeak = ((peak.pedidos/totalPedidosHourly)*100).toFixed(0);
+    insights.push({
+      level: peak.pct_fora>65?'crit':'warn', tag: peak.pct_fora>65?'crítico':'atenção',
+      text: `<b>Pico às ${peak.hora}h</b> concentra ${fmtInt(peak.pedidos)} pedidos (~${pctVolPeak}% do volume horário total) com <b>${fmtPct(peak.pct_fora)}</b> fora do SLA de expedição — o pior ponto do dia.`
+    });
+  }
+
+  // Gargalo etapa
+  if(k.pct_fora_sla_expedicao!==null && k.pct_fora_sla_separacao!==null){
+    const diff = k.pct_fora_sla_expedicao - k.pct_fora_sla_separacao;
+    if(diff>20){
+      insights.push({
+        level:'crit', tag:'gargalo',
+        text:`A <b>expedição</b> é o gargalo do processo: ${fmtPct(k.pct_fora_sla_expedicao)} fora do SLA contra apenas ${fmtPct(k.pct_fora_sla_separacao)} na separação — a diferença de ${diff.toFixed(0)} pontos indica fila/espera após o pedido pronto, não falta de capacidade de separar.`
+      });
+    }
+  }
+
+  // Peak by dow
+  if(data.peak_by_dow && data.peak_by_dow.length){
+    const worst = data.peak_by_dow.reduce((a,b)=> b.pct_fora>a.pct_fora? b:a);
+    const best = data.peak_by_dow.reduce((a,b)=> b.pct_fora<a.pct_fora? b:a);
+    insights.push({
+      level:'warn', tag:'padrão semanal',
+      text:`No horário de pico, <b>${worst.dow}</b> é o dia mais crítico (${fmtPct(worst.pct_fora)} fora do SLA) contra ${fmtPct(best.pct_fora)} em ${best.dow} — sugere concentração desigual de romaneios/rotas ao longo da semana.`
+    });
+  }
+
+  // Ruptura
+  if(k.pct_ruptura!==null && k.pct_ruptura>35){
+    insights.push({
+      level: k.pct_ruptura>50?'crit':'warn', tag:'ruptura',
+      text:`<b>${fmtPct(k.pct_ruptura)}</b> dos pedidos avaliados tiveram ruptura de item — impacta a experiência mas tem efeito secundário sobre o atraso de SLA comparado à concentração horária.`
+    });
+  }
+
+  // Cancelamento
+  if(data.cancel_reasons && data.cancel_reasons.length){
+    const top = data.cancel_reasons[0];
+    const custIni = data.cancel_origin?.find(o=>o.origem==='CUSTOMER');
+    const totalCancel = data.cancel_origin?.reduce((s,o)=>s+o.count,0) || 0;
+    const custPct = custIni && totalCancel? ((custIni.count/totalCancel)*100).toFixed(0) : null;
+    insights.push({
+      level:'info', tag:'cancelamento',
+      text:`Motivo mais comum de cancelamento: <b>"${top.motivo}"</b> (${fmtInt(top.count)} casos)${custPct? `. ${custPct}% dos cancelamentos partem do próprio cliente — provável reação à demora`:''}.`
+    });
+  }
+
+  // End-of-day recovery
+  const lateHours = hourly.filter(h=>h.hora>=15);
+  if(lateHours.length){
+    const avgLate = lateHours.reduce((s,h)=>s+h.pct_fora,0)/lateHours.length;
+    if(avgLate < (validHourly.length? Math.max(...validHourly.map(h=>h.pct_fora)) - 20 : 100)){
+      insights.push({
+        level:'good', tag:'recuperação',
+        text:`A partir das 15h o SLA melhora consideravelmente (média ${fmtPct(avgLate)}), mesmo com volume ainda relevante — indício de que a operação absorve bem a demanda quando ela não vem concentrada em um pico estreito.`
+      });
+    }
+  }
+
+  return insights;
+}
+
+function renderHourlyChart(data){
+  const ctx = document.getElementById('chartHourly');
+  chartInstances.hourly = new Chart(ctx, {
+    data:{
+      labels: data.hourly.map(h=>h.hora+'h'),
+      datasets:[
+        {
+          type:'bar', label:'Pedidos', data: data.hourly.map(h=>h.pedidos),
+          backgroundColor: data.hourly.map(h=>sevColor(h.pct_fora)+'55'),
+          borderColor: data.hourly.map(h=>sevColor(h.pct_fora)),
+          borderWidth:1, borderRadius:4, yAxisID:'y',
+        },
+        {
+          type:'line', label:'% Fora do SLA', data: data.hourly.map(h=>h.pct_fora),
+          borderColor: COLORS.accent, backgroundColor: COLORS.accent, borderWidth:2.5,
+          pointRadius:4, pointBackgroundColor: data.hourly.map(h=>sevColor(h.pct_fora)),
+          tension:0.3, yAxisID:'y1',
+        }
+      ]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:true,
+      interaction:{mode:'index', intersect:false},
+      plugins:{ legend:{labels:{boxWidth:12, font:{size:11}}} },
+      scales:{
+        y:{ position:'left', grid:{color:COLORS.border}, title:{display:true,text:'Pedidos',font:{size:10}} },
+        y1:{ position:'right', min:0, max:100, grid:{display:false}, title:{display:true,text:'% Fora SLA',font:{size:10}} },
+        x:{ grid:{display:false} }
+      }
+    }
+  });
+}
+
+function renderHeatmap(data){
+  const hm = data.heatmap;
+  const container = document.getElementById('heatmapContainer');
+  let html = '<table class="heatmap-table"><thead><tr><th></th>';
+  hm.days.forEach(d=> html += `<th>${d}</th>`);
+  html += '</tr></thead><tbody>';
+  hm.hours.forEach((h,i)=>{
+    html += `<tr><td class="hourcell">${h}h</td>`;
+    hm.values[i].forEach(v=>{
+      if(v===null){
+        html += `<td><div class="heatcell empty">—</div></td>`;
+      } else {
+        html += `<td><div class="heatcell" style="background:${sevColor(v)}">${v.toFixed(0)}</div></td>`;
+      }
+    });
+    html += '</tr>';
+  });
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+function renderPeakChart(data){
+  const ctx = document.getElementById('chartPeakDow');
+  chartInstances.peak = new Chart(ctx, {
+    type:'bar',
+    data:{
+      labels: data.peak_by_dow.map(p=>p.dow),
+      datasets:[{
+        label:'% Fora do SLA (11h-12h)',
+        data: data.peak_by_dow.map(p=>p.pct_fora),
+        backgroundColor: data.peak_by_dow.map(p=>sevColor(p.pct_fora)+'AA'),
+        borderColor: data.peak_by_dow.map(p=>sevColor(p.pct_fora)),
+        borderWidth:1.5, borderRadius:5,
+      }]
+    },
+    options:{
+      responsive:true,
+      plugins:{legend:{display:false}},
+      scales:{
+        y:{min:0,max:100,grid:{color:COLORS.border},title:{display:true,text:'% Fora do SLA',font:{size:10}}},
+        x:{grid:{display:false}}
+      }
+    }
+  });
+}
+
+function renderPeakTable(data){
+  const tbody = document.getElementById('peakTableBody');
+  tbody.innerHTML = data.peak_by_dow.map(p=>`
+    <tr>
+      <td style="font-family:'Inter',sans-serif;">${p.dow}</td>
+      <td>${fmtInt(p.pedidos)}</td>
+      <td>${fmtInt(p.fora_sla)}</td>
+      <td><span class="badge ${sevClass(p.pct_fora)}">${fmtPct(p.pct_fora)}</span></td>
+    </tr>
+  `).join('');
+}
+
+function renderDonuts(data){
+  const stages = [
+    {id:'donutSeparacao', d:data.sla_breakdown.separacao},
+    {id:'donutExpedicao', d:data.sla_breakdown.expedicao},
+    {id:'donutEntrega', d:data.sla_breakdown.entrega},
+  ];
+  stages.forEach(s=>{
+    const total = s.d.dentro + s.d.fora;
+    const pctFora = total? (s.d.fora/total*100) : 0;
+    const ctx = document.getElementById(s.id);
+    chartInstances[s.id] = new Chart(ctx, {
+      type:'doughnut',
+      data:{
+        labels:['Dentro do SLA','Fora do SLA'],
+        datasets:[{
+          data:[s.d.dentro, s.d.fora],
+          backgroundColor:[COLORS.good, sevColor(pctFora)],
+          borderColor: COLORS.panel2, borderWidth:3,
+        }]
+      },
+      options:{
+        responsive:true,
+        cutout:'70%',
+        plugins:{
+          legend:{display:false},
+          tooltip:{callbacks:{label:(c)=> `${c.label}: ${fmtInt(c.raw)}`}}
+        }
+      },
+      plugins:[{
+        id:'centerText',
+        afterDraw(chart){
+          const {ctx,chartArea:{width,height,left,top}} = chart;
+          ctx.save();
+          ctx.font = "700 22px 'Barlow Condensed', sans-serif";
+          ctx.fillStyle = sevColor(pctFora);
+          ctx.textAlign='center'; ctx.textBaseline='middle';
+          ctx.fillText(pctFora.toFixed(0)+'%', left+width/2, top+height/2 - 6);
+          ctx.font = "500 9px 'JetBrains Mono', monospace";
+          ctx.fillStyle = COLORS.text3;
+          ctx.fillText('FORA SLA', left+width/2, top+height/2 + 14);
+          ctx.restore();
+        }
+      }]
+    });
+  });
+}
+
+function renderCancelChart(data){
+  const ctx = document.getElementById('chartCancel');
+  const items = data.cancel_reasons.slice(0,8);
+  chartInstances.cancel = new Chart(ctx, {
+    type:'bar',
+    data:{
+      labels: items.map(i=>i.motivo.length>28? i.motivo.slice(0,26)+'…':i.motivo),
+      datasets:[{
+        data: items.map(i=>i.count),
+        backgroundColor: COLORS.accent+'99', borderColor: COLORS.accent, borderWidth:1.5, borderRadius:4,
+      }]
+    },
+    options:{
+      indexAxis:'y', responsive:true,
+      plugins:{legend:{display:false}},
+      scales:{ x:{grid:{color:COLORS.border}}, y:{grid:{display:false}, ticks:{font:{size:10.5}}} }
+    }
+  });
+}
+
+function renderRupturaChart(data){
+  const ctx = document.getElementById('chartRuptura');
+  const items = data.ruptura_reasons.filter(r=>r.tipo!=='sem ruptura').slice(0,8);
+  chartInstances.ruptura = new Chart(ctx, {
+    type:'bar',
+    data:{
+      labels: items.map(i=>i.tipo.length>28? i.tipo.slice(0,26)+'…':i.tipo),
+      datasets:[{
+        data: items.map(i=>i.count),
+        backgroundColor: COLORS.warn+'99', borderColor: COLORS.warn, borderWidth:1.5, borderRadius:4,
+      }]
+    },
+    options:{
+      indexAxis:'y', responsive:true,
+      plugins:{legend:{display:false}},
+      scales:{ x:{grid:{color:COLORS.border}}, y:{grid:{display:false}, ticks:{font:{size:10.5}}} }
+    }
+  });
+}
+
+function renderDailyChart(data){
+  const ctx = document.getElementById('chartDaily');
+  chartInstances.daily = new Chart(ctx, {
+    data:{
+      labels: data.daily_trend.map(d=>{ const [y,m,dd]=d.data.split('-'); return dd+'/'+m; }),
+      datasets:[
+        {
+          type:'bar', label:'Pedidos', data: data.daily_trend.map(d=>d.pedidos),
+          backgroundColor: COLORS.text3+'55', borderColor: COLORS.text3, borderWidth:1, borderRadius:3, yAxisID:'y',
+        },
+        {
+          type:'line', label:'% Fora do SLA', data: data.daily_trend.map(d=>d.pct_fora),
+          borderColor: COLORS.accent, borderWidth:2, pointRadius:2.5,
+          pointBackgroundColor: data.daily_trend.map(d=>sevColor(d.pct_fora)),
+          tension:0.25, yAxisID:'y1',
+        }
+      ]
+    },
+    options:{
+      responsive:true,
+      interaction:{mode:'index', intersect:false},
+      plugins:{legend:{labels:{boxWidth:12,font:{size:11}}}},
+      scales:{
+        y:{position:'left', grid:{color:COLORS.border}, title:{display:true,text:'Pedidos',font:{size:10}}},
+        y1:{position:'right', min:0, max:100, grid:{display:false}, title:{display:true,text:'% Fora SLA',font:{size:10}}},
+        x:{grid:{display:false}, ticks:{maxRotation:0, autoSkip:true, maxTicksLimit:14}}
+      }
+    }
+  });
+}
+
+/* ================= UPLOAD & PARSING ================= */
+function round1(n){ return Math.round(n*10)/10; }
+function round2(n){ return Math.round(n*100)/100; }
+function pad(n){ return n<10? '0'+n : ''+n; }
+function fmtDateKey(d){ return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
+function parseDateOnly(v){
+  if(v===null||v===undefined||v==='') return null;
+  if(v instanceof Date) return new Date(v.getFullYear(), v.getMonth(), v.getDate());
+  const d = new Date(v);
+  return isNaN(d) ? null : new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+function parseDateTime(v){
+  if(v===null||v===undefined||v==='') return null;
+  if(v instanceof Date) return v;
+  const d = new Date(v);
+  return isNaN(d) ? null : d;
+}
+
+function computeAggregates(rows){
+  const total = rows.length;
+  const statusCounts = {};
+  rows.forEach(r=>{ const s=r.status_pedido; if(s!==undefined) statusCounts[s]=(statusCounts[s]||0)+1; });
+  const concluded = statusCounts['CONCLUDED']||0;
+  const cancelled = statusCounts['CANCELLED']||0;
+
+  function pctFora(col){
+    const vals = rows.map(r=>r[col]).filter(v=>v!==null && v!==undefined && v!=='');
+    if(!vals.length) return null;
+    const fora = vals.filter(v=>v==='Fora do SLA').length;
+    return round1(fora/vals.length*100);
+  }
+  function countsFora(col){
+    const vals = rows.map(r=>r[col]).filter(v=>v!==null && v!==undefined && v!=='');
+    return { dentro: vals.filter(v=>v==='Dentro do SLA').length, fora: vals.filter(v=>v==='Fora do SLA').length };
+  }
+
+  const rupturaVals = rows.map(r=>r.houve_ruptura).filter(v=>v!==null && v!==undefined && v!=='');
+  const rupturaTrue = rupturaVals.filter(v=> v===true || v==='true' || v==='TRUE' || v==='Sim' || v==='SIM' || v==='sim' || v===1 || v==='1').length;
+  const pctRuptura = rupturaVals.length? round1(rupturaTrue/rupturaVals.length*100) : null;
+
+  function toNum(v){
+    if(v===null||v===undefined||v==='') return null;
+    if(typeof v==='number') return isFinite(v)? v : null;
+    const n = parseFloat(String(v).replace(',','.'));
+    return isFinite(n)? n : null;
+  }
+  const notas = rows.map(r=>toNum(r.nota_da_avaliacao)).filter(v=>v!==null);
+  const notaMedia = notas.length? round2(notas.reduce((a,b)=>a+b,0)/notas.length) : null;
+
+  const valores = rows.map(r=>toNum(r.valor_total)).filter(v=>v!==null);
+  const valorTotal = valores.length? round2(valores.reduce((a,b)=>a+b,0)) : null;
+
+  const dtVals = rows.map(r=>parseDateOnly(r.dt)).filter(Boolean);
+  const periodoInicio = dtVals.length? new Date(Math.min(...dtVals)) : null;
+  const periodoFim = dtVals.length? new Date(Math.max(...dtVals)) : null;
+
+  const lojaRow = rows.find(r=>r.rede_loja);
+  const loja = lojaRow? lojaRow.rede_loja : 'N/A';
+
+  const kpis = {
+    total_pedidos: total, concluded, cancelled,
+    pct_concluded: total? round1(concluded/total*100):0,
+    pct_cancelled: total? round1(cancelled/total*100):0,
+    pct_fora_sla_separacao: pctFora('sla_separacao'),
+    pct_fora_sla_expedicao: pctFora('sla_expedicao'),
+    pct_fora_sla_entrega: pctFora('sla_entrega'),
+    pct_ruptura: pctRuptura,
+    nota_media: notaMedia,
+    valor_total: valorTotal,
+    periodo_inicio: periodoInicio? fmtDateKey(periodoInicio) : 'N/A',
+    periodo_fim: periodoFim? fmtDateKey(periodoFim) : 'N/A',
+    loja
+  };
+
+  const sla_breakdown = {
+    separacao: countsFora('sla_separacao'),
+    expedicao: countsFora('sla_expedicao'),
+    entrega: countsFora('sla_entrega'),
+  };
+
+  const withColeta = rows.map(r=>({r, coleta: parseDateTime(r.horario_coleta_entregador)})).filter(x=>x.coleta);
+
+  const hourlyMap = {};
+  withColeta.forEach(({r,coleta})=>{
+    const h = coleta.getHours();
+    if(h<8||h>20) return;
+    hourlyMap[h] = hourlyMap[h] || {pedidos:0, fora:0};
+    hourlyMap[h].pedidos++;
+    if(r.sla_expedicao==='Fora do SLA') hourlyMap[h].fora++;
+  });
+  const hourly = [];
+  for(let h=8; h<=20; h++){
+    const e = hourlyMap[h] || {pedidos:0, fora:0};
+    hourly.push({hora:h, pedidos:e.pedidos, fora_sla:e.fora, pct_fora: e.pedidos? round1(e.fora/e.pedidos*100):0});
+  }
+
+  const dowNames = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  const order = ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'];
+  const heatMap = {};
+  withColeta.forEach(({r,coleta})=>{
+    const h = coleta.getHours();
+    if(h<8||h>20) return;
+    const dow = dowNames[coleta.getDay()];
+    heatMap[h] = heatMap[h] || {};
+    heatMap[h][dow] = heatMap[h][dow] || {pedidos:0, fora:0};
+    heatMap[h][dow].pedidos++;
+    if(r.sla_expedicao==='Fora do SLA') heatMap[h][dow].fora++;
+  });
+  const heatHours = []; const heatValues = [];
+  for(let h=8; h<=20; h++){
+    heatHours.push(h);
+    const row = order.map(d=>{
+      const e = (heatMap[h]||{})[d];
+      return e ? round1(e.fora/e.pedidos*100) : null;
+    });
+    heatValues.push(row);
+  }
+  const heatmap = {hours:heatHours, days:order, values:heatValues};
+
+  const dailyMap = {};
+  rows.forEach(r=>{
+    const dt = parseDateOnly(r.dt);
+    if(!dt) return;
+    const key = fmtDateKey(dt);
+    dailyMap[key] = dailyMap[key] || {pedidos:0, foraVals:[]};
+    dailyMap[key].pedidos++;
+    if(r.sla_expedicao!==null && r.sla_expedicao!==undefined && r.sla_expedicao!=='') dailyMap[key].foraVals.push(r.sla_expedicao==='Fora do SLA');
+  });
+  const daily_trend = Object.keys(dailyMap).sort().map(k=>{
+    const e = dailyMap[k];
+    return {data:k, pedidos:e.pedidos, pct_fora: e.foraVals.length? round1(e.foraVals.filter(Boolean).length/e.foraVals.length*100) : null};
+  });
+
+  function valueCountsList(col, top=8){
+    const map = {};
+    rows.forEach(r=>{ const v=r[col]; if(v===null||v===undefined||v==='') return; map[v]=(map[v]||0)+1; });
+    return Object.entries(map).sort((a,b)=>b[1]-a[1]).slice(0,top).map(([label,count])=>({label,count}));
+  }
+  const cancel_reasons = valueCountsList('motivo_do_cancelamento',8).map(x=>({motivo:x.label, count:x.count}));
+  const cancel_origin = valueCountsList('origem_cancelamento_ifood',8).map(x=>({origem:x.label, count:x.count}));
+  const ruptura_reasons = valueCountsList('tipo_ruptura',8).map(x=>({tipo:x.label, count:x.count}));
+  const canal = valueCountsList('canal_de_vendas',8);
+  const tipo_entrega = valueCountsList('tipo_de_entrega',8);
+  const modal = valueCountsList('modal_pedido',8);
+
+  const peakMap = {};
+  withColeta.forEach(({r,coleta})=>{
+    const h = coleta.getHours();
+    if(h!==11 && h!==12) return;
+    const dow = dowNames[coleta.getDay()];
+    peakMap[dow] = peakMap[dow] || {pedidos:0, fora:0};
+    peakMap[dow].pedidos++;
+    if(r.sla_expedicao==='Fora do SLA') peakMap[dow].fora++;
+  });
+  const peak_by_dow = order.map(dow=>{
+    const e = peakMap[dow] || {pedidos:0, fora:0};
+    return {dow, pedidos:e.pedidos, fora_sla:e.fora, pct_fora: e.pedidos? round1(e.fora/e.pedidos*100):0};
+  });
+
+  return {kpis, sla_breakdown, hourly, heatmap, daily_trend, cancel_reasons, cancel_origin, ruptura_reasons, peak_by_dow, canal, tipo_entrega, modal};
+}
+
+function showToast(msg, isError){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.borderColor = isError ? '#F87171' : '#FF7A45';
+  t.classList.add('show');
+  setTimeout(()=> t.classList.remove('show'), 3200);
+}
+
+function setStatus(msg, kind){
+  const el = document.getElementById('uploadStatus');
+  el.textContent = msg;
+  el.className = 'upload-status' + (kind? ' '+kind : '');
+}
+
+function setBtnLoading(loading){
+  const btn = document.getElementById('uploadBtn');
+  if(loading){
+    btn.classList.add('loading');
+    btn.innerHTML = '<span class="spinner"></span> Processando…';
+  } else {
+    btn.classList.remove('loading');
+    btn.innerHTML = '⬆ Atualizar dados (.xlsx)';
+  }
+}
+
+const REQUIRED_COLUMNS = ['dt','status_pedido','sla_expedicao','horario_coleta_entregador'];
+
+document.getElementById('fileInput').addEventListener('change', function(e){
+  const file = e.target.files[0];
+  if(!file) return;
+
+  console.log('[Painel NSu] Arquivo selecionado:', file.name, file.size, 'bytes');
+  setBtnLoading(true);
+  setStatus('Lendo "'+file.name+'"…', 'loading');
+
+  const reader = new FileReader();
+
+  reader.onerror = function(){
+    console.error('[Painel NSu] FileReader falhou ao ler o arquivo.', reader.error);
+    setBtnLoading(false);
+    setStatus('Falha ao ler o arquivo no navegador. Tente novamente.', 'err');
+    showToast('Erro ao ler o arquivo.', true);
+  };
+
+  reader.onload = function(evt){
+    try{
+      if(typeof XLSX === 'undefined'){
+        throw new Error('Biblioteca XLSX não carregou (verifique sua conexão com a internet — o painel depende de um script externo via CDN).');
+      }
+
+      const wb = XLSX.read(evt.target.result, {type:'array', cellDates:true});
+      console.log('[Painel NSu] Abas encontradas:', wb.SheetNames);
+      const sheetName = wb.SheetNames[0];
+      const sheet = wb.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(sheet, {defval:null});
+      console.log('[Painel NSu] Linhas lidas:', rows.length);
+
+      if(!rows.length){
+        throw new Error('O arquivo foi lido, mas não encontrei nenhuma linha de dados na primeira aba ("'+sheetName+'").');
+      }
+
+      const foundColumns = Object.keys(rows[0]);
+      console.log('[Painel NSu] Colunas encontradas:', foundColumns);
+      const missing = REQUIRED_COLUMNS.filter(c => !foundColumns.includes(c));
+      if(missing.length){
+        throw new Error('Faltam colunas esperadas no arquivo: '+missing.join(', ')+'. Colunas encontradas: '+foundColumns.slice(0,12).join(', ')+(foundColumns.length>12?'…':'')+'.');
+      }
+
+      const agg = computeAggregates(rows);
+      render(agg);
+
+      const now = new Date();
+      const hh = pad(now.getHours()), mm = pad(now.getMinutes());
+      setStatus(`✓ Atualizado às ${hh}:${mm} — ${rows.length.toLocaleString('pt-BR')} pedidos de "${file.name}"`, 'ok');
+      showToast(`Dados atualizados: ${rows.length.toLocaleString('pt-BR')} pedidos carregados.`);
+    }catch(err){
+      console.error('[Painel NSu] Erro ao processar arquivo:', err);
+      setStatus('✕ '+err.message, 'err');
+      showToast('Erro ao processar o arquivo — veja detalhes abaixo do botão.', true);
+    }finally{
+      setBtnLoading(false);
+    }
+  };
+
+  reader.readAsArrayBuffer(file);
+  e.target.value = '';
+});
+
+/* ================= INIT ================= */
+render(INITIAL_DATA);
+</script>
+</body>
+</html>
