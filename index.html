@@ -103,6 +103,14 @@ body{padding:20px 20px 60px;}
 .upload-btn:active{transform:translateY(0);}
 .upload-hint{font-size:11px;color:var(--text-3);}
 #fileInput{display:none;}
+.upload-actions{display:flex;gap:8px;}
+.clear-btn{
+  background:transparent;color:#F87171;font-family:'Inter',sans-serif;font-weight:600;font-size:12px;
+  border:1px solid rgba(248,113,113,0.4);border-radius:8px;padding:11px 14px;cursor:pointer;
+  display:flex;align-items:center;gap:6px;transition:background .15s ease, border-color .15s ease;
+}
+.clear-btn:hover{background:rgba(248,113,113,0.1);border-color:#F87171;}
+.clear-btn:active{transform:translateY(0);}
 .upload-status{
   font-size:11px;color:var(--text-3);max-width:280px;text-align:right;line-height:1.5;
   font-family:'JetBrains Mono',monospace;
@@ -244,9 +252,14 @@ footer{text-align:center;color:var(--text-3);font-size:11px;margin-top:24px;font
     <div class="sub">Período: <b id="periodoLabel">—</b> · <span id="totalPedidosLabel">—</span> pedidos analisados</div>
   </div>
   <div class="upload-wrap">
-    <button class="upload-btn" id="uploadBtn" onclick="document.getElementById('fileInput').click()">
-      ⬆ Atualizar dados (.xlsx)
-    </button>
+    <div class="upload-actions">
+      <button class="upload-btn" id="uploadBtn" onclick="document.getElementById('fileInput').click()">
+        ⬆ Atualizar dados (.xlsx)
+      </button>
+      <button class="clear-btn" id="clearBtn" title="Apaga todos os dados carregados">
+        🗑️ Excluir todos os dados
+      </button>
+    </div>
     <input type="file" id="fileInput" accept=".xlsx,.xls">
     <div class="upload-status" id="uploadStatus">Nenhum arquivo carregado ainda — exibindo dados iniciais</div>
   </div>
@@ -986,6 +999,15 @@ document.getElementById('fileInput').addEventListener('change', function(e){
 
   reader.readAsArrayBuffer(file);
   e.target.value = '';
+});
+
+document.getElementById('clearBtn').addEventListener('click', function(){
+  if(!confirm('Tem certeza que quer excluir todos os dados carregados? O painel voltará ao estado vazio, sem pedidos.')) return;
+  destroyCharts();
+  const empty = computeAggregates([]);
+  render(empty);
+  setStatus('Dados excluídos. Envie um novo arquivo .xlsx para começar de novo.', '');
+  showToast('Todos os dados foram excluídos.');
 });
 
 /* ================= INIT ================= */
