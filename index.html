@@ -4,6 +4,21 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Painel NSu — Liberação de Motorista</title>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script>
+  const firebaseConfig = {
+    apiKey: "AIzaSyD2qYaUrjyFoJgfNLRTBg-b2t9Yr9GSB3A",
+    authDomain: "escala-dinamica.firebaseapp.com",
+    databaseURL: "https://escala-dinamica-default-rtdb.firebaseio.com",
+    projectId: "escala-dinamica",
+    storageBucket: "escala-dinamica.firebasestorage.app",
+    messagingSenderId: "896362898729",
+    appId: "1:896362898729:web:443ef1f568fc709bf3c338"
+  };
+  firebase.initializeApp(firebaseConfig);
+  const nsuDb = firebase.database();
+</script>
 <script>
 /* Chart.js v4.4.4 — embutido localmente (sem dependência de CDN externo) */
 /*!
@@ -983,6 +998,11 @@ document.getElementById('fileInput').addEventListener('change', function(e){
 
       const agg = computeAggregates(rows);
       render(agg);
+      nsuDb.ref('nsu_dashboard/latest').set({
+        agg: agg,
+        arquivo: file.name,
+        atualizado_em: new Date().toISOString()
+      }).catch(err => console.warn('[Painel NSu] Falha ao salvar no Firebase:', err));
 
       const now = new Date();
       const hh = pad(now.getHours()), mm = pad(now.getMinutes());
@@ -1006,12 +1026,23 @@ document.getElementById('clearBtn').addEventListener('click', function(){
   destroyCharts();
   const empty = computeAggregates([]);
   render(empty);
+  nsuDb.ref('nsu_dashboard/latest').remove().catch(err => console.warn('[Painel NSu] Falha ao limpar no Firebase:', err));
   setStatus('Dados excluídos. Envie um novo arquivo .xlsx para começar de novo.', '');
   showToast('Todos os dados foram excluídos.');
 });
 
 /* ================= INIT ================= */
-render(INITIAL_DATA);
+nsuDb.ref('nsu_dashboard/latest').once('value').then(snap => {
+  const saved = snap.val();
+  if(saved && saved.agg){
+    render(saved.agg);
+    setStatus(`Última atualização salva: ${saved.arquivo || 'arquivo'} (${new Date(saved.atualizado_em).toLocaleString('pt-BR')})`, 'ok');
+  }else{
+    render(INITIAL_DATA);
+  }
+}).catch(() => {
+  render(INITIAL_DATA);
+});
 </script>
 </body>
 </html>
